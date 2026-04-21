@@ -15,6 +15,7 @@ import { MicSettings } from './mic-settings/mic-settings';
 import { useTranslation } from '@/i18n';
 import { RecordModeSettings } from '@/features/settings/system/record-mode-settings/record-mode-settings.tsx';
 import { LogLevelSettings } from './log-level-settings/log-level-settings';
+import { IdleUnloadSettings } from './idle-unload-settings/idle-unload-settings';
 import { Settings, Zap, Wrench, Monitor } from 'lucide-react';
 
 export const System = () => {
@@ -67,6 +68,8 @@ export const System = () => {
 
                         <SettingsUI.Section title={t('Advanced')} icon={Wrench}>
                             <LogLevelSettings />
+                            <SettingsUI.Separator />
+                            <IdleUnloadSettings />
                             <SettingsUI.Separator />
                             <CopyToClipboardSettings />
                         </SettingsUI.Section>
