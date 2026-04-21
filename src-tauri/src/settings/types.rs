@@ -71,6 +71,8 @@ pub struct AppSettings {
     pub streaming_text_width: u32,
     pub streaming_font_size: u32,
     pub streaming_max_lines: u32,
+    /// Unload the transcription model after N minutes of idle. 0 = never.
+    pub idle_unload_minutes: u32,
 }
 
 impl Default for AppSettings {
@@ -122,6 +124,7 @@ impl Default for AppSettings {
             streaming_text_width: 450,
             streaming_font_size: 11,
             streaming_max_lines: 5,
+            idle_unload_minutes: 0,
         }
     }
 }

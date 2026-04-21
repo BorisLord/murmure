@@ -1,7 +1,6 @@
 use crate::audio::helpers::resample_linear;
 use crate::audio::types::{AudioState, RecordingMode, RecordingTrigger};
 use crate::engine::transcription_engine::TranscriptionEngine;
-use crate::engine::ParakeetModelParams;
 use crate::shortcuts::types::{recording_state, RecordingSource};
 use crate::wake_word::types::{WakeWordAction, WakeWordEntry, WakeWordState};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -679,26 +678,9 @@ fn resample_and_transcribe(
 }
 
 fn transcribe_segment(app: &AppHandle, samples: Vec<f32>) -> anyhow::Result<String> {
+    crate::audio::ensure_engine_loaded(app)?;
+
     let audio_state = app.state::<AudioState>();
-
-    {
-        let mut engine_guard = audio_state.engine.lock();
-        if engine_guard.is_none() {
-            let model = app.state::<Arc<crate::model::Model>>();
-            let model_path = model
-                .get_model_path()
-                .map_err(|e| anyhow::anyhow!("Failed to get model path: {}", e))?;
-
-            let mut new_engine = crate::engine::ParakeetEngine::new();
-            new_engine
-                .load_model_with_params(&model_path, ParakeetModelParams::int8())
-                .map_err(|e| anyhow::anyhow!("Failed to load model: {}", e))?;
-
-            *engine_guard = Some(new_engine);
-            debug!("Model loaded for wake word detection");
-        }
-    }
-
     let mut engine_guard = audio_state.engine.lock();
     let engine = engine_guard
         .as_mut()

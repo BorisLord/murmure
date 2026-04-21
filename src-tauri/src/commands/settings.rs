@@ -88,3 +88,30 @@ pub fn set_show_in_dock(app: AppHandle, show: bool) -> Result<(), String> {
     s.show_in_dock = show;
     crate::settings::save_settings(&app, &s)
 }
+
+#[command]
+pub fn get_idle_unload_minutes(app: AppHandle) -> Result<u32, String> {
+    let s = crate::settings::load_settings(&app);
+    Ok(s.idle_unload_minutes)
+}
+
+#[command]
+pub fn set_idle_unload_minutes(app: AppHandle, minutes: u32) -> Result<(), String> {
+    const ALLOWED: &[u32] = &[0, 5, 15, 30, 60];
+    if !ALLOWED.contains(&minutes) {
+        return Err(format!("Invalid idle unload preset: {}", minutes));
+    }
+
+    let mut s = crate::settings::load_settings(&app);
+    s.idle_unload_minutes = minutes;
+    crate::settings::save_settings(&app, &s)?;
+
+    // Apply immediately so "after N min" counts from save, not next dictation.
+    if minutes == 0 {
+        crate::audio::cancel_pending_idle_unload(&app);
+    } else {
+        crate::audio::schedule_idle_unload(&app);
+    }
+
+    Ok(())
+}

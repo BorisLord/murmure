@@ -27,6 +27,7 @@ pub struct AudioState {
     pub streaming_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
     pub streaming_stop: Arc<AtomicBool>,
     pub streaming_buffer: Arc<Mutex<Vec<f32>>>,
+    pub idle_unload_cancel: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +79,7 @@ impl AudioState {
             streaming_handle: Mutex::new(None),
             streaming_stop: Arc::new(AtomicBool::new(false)),
             streaming_buffer: Arc::new(Mutex::new(Vec::new())),
+            idle_unload_cancel: Mutex::new(None),
         }
     }
 

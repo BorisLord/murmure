@@ -18,7 +18,15 @@ pub fn load_settings(app: &AppHandle) -> AppSettings {
     };
 
     match fs::read_to_string(&path) {
-        Ok(content) => serde_json::from_str::<AppSettings>(&content).unwrap_or_default(),
+        Ok(content) => {
+            let settings = serde_json::from_str::<AppSettings>(&content).unwrap_or_default();
+            if let Ok(canonical) = serde_json::to_string_pretty(&settings) {
+                if canonical != content {
+                    let _ = fs::write(&path, canonical);
+                }
+            }
+            settings
+        }
         Err(_) => {
             let defaults = AppSettings::default();
             let _ = save_settings(app, &defaults);
