@@ -359,6 +359,14 @@ pub fn unload_engine(app: &AppHandle) {
     let mut engine = state.engine.lock();
     if engine.is_some() {
         *engine = None;
+        // glibc caches freed arenas by default, so RSS doesn't drop after
+        // Rust releases the large ONNX buffers — malloc_trim(0) is the GNU
+        // extension that madvise(DONTNEED)s them back to the kernel. Other
+        // libcs (musl, macOS, Windows) already release aggressively.
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        unsafe {
+            libc::malloc_trim(0);
+        }
         info!("Transcription model unloaded (idle timer)");
         let _ = app.emit("model-state-changed", "unloaded");
     }

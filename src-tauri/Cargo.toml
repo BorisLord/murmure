@@ -75,6 +75,8 @@ parking_lot = "0.12"
 # Using fufesou fork which provides F13-F20 key support
 [target.'cfg(target_os = "linux")'.dependencies]
 rdev = { git = "https://github.com/fufesou/rdev" }
+# Direct libc for the glibc `malloc_trim` call — see audio::unload_engine.
+libc = "0.2"
 
 # Core Foundation for macOS keyboard layout handling (AZERTY/QWERTY conversion)
 [target.'cfg(target_os = "macos")'.dependencies]
