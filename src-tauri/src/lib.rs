@@ -21,7 +21,7 @@ mod utils;
 mod wake_word;
 
 use crate::shortcuts::init_shortcuts;
-use audio::preload_engine;
+use audio::ensure_engine_loaded;
 use audio::types::AudioState;
 use commands::*;
 use dictionary::Dictionary;
@@ -178,10 +178,13 @@ pub fn run() {
             app.manage(HttpApiState::new());
             app.manage(SmartMicState::new());
 
-            match preload_engine(app.handle()) {
+            match ensure_engine_loaded(app.handle()) {
                 Ok(_) => info!("Transcription engine initialized and ready"),
                 Err(e) => info!("Transcription engine will be loaded on first use: {}", e),
             }
+
+            // A boot without any dictation would otherwise leave the model resident.
+            crate::audio::schedule_idle_unload(app.handle());
 
             setup_tray(app.handle())?;
 
@@ -364,7 +367,9 @@ pub fn run() {
             set_streaming_preview,
             set_overlay_size,
             set_streaming_text_settings,
-            get_recording_mode
+            get_recording_mode,
+            get_idle_unload_minutes,
+            set_idle_unload_minutes
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

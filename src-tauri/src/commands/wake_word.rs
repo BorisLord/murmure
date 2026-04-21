@@ -24,9 +24,13 @@ pub fn set_wake_word_enabled(app: AppHandle, enabled: bool) -> Result<(), String
     crate::settings::save_settings(&app, &s)?;
 
     if enabled {
+        // Idle-unload would evict the model between detections.
+        crate::audio::cancel_pending_idle_unload(&app);
         crate::wake_word::start_listener(&app);
     } else {
         crate::wake_word::stop_listener(&app);
+        // Voice Mode was pinning the model; arm the timer now it's releaseable.
+        crate::audio::schedule_idle_unload(&app);
     }
 
     Ok(())

@@ -15,6 +15,19 @@ use strsim::levenshtein;
 use tauri::{AppHandle, Emitter, Manager};
 
 pub fn record_audio(app: &AppHandle, mode: RecordingMode) {
+    cancel_pending_idle_unload(app);
+    // Optimistic swap to hide the ~500 ms reload latency; reverted below on failure.
+    let _ = app.emit("model-state-changed", "loaded");
+    // Preload off the main thread so the model warms up while the user speaks.
+    let preload_app = app.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = ensure_engine_loaded(&preload_app) {
+            error!("Failed to preload transcription engine: {}", e);
+            let _ = preload_app.emit("model-state-changed", "unloaded");
+            let _ = preload_app.emit("model-load-error", e.to_string());
+        }
+    });
+
     let state = app.state::<AudioState>();
     state.set_recording_mode(mode);
     if state.get_recording_trigger() != RecordingTrigger::WakeWord {
@@ -27,6 +40,12 @@ pub fn record_audio(app: &AppHandle, mode: RecordingMode) {
     }
 
     internal_record_audio(app);
+
+    // No stop/cancel path runs if recording didn't actually start; arm the
+    // timer here so the preload doesn't leak the model.
+    if state.recorder.lock().is_none() {
+        schedule_idle_unload(app);
+    }
 }
 
 fn internal_record_audio(app: &AppHandle) {
@@ -161,6 +180,8 @@ pub fn stop_recording(app: &AppHandle) -> Option<std::path::PathBuf> {
         reset_recording_ui(app);
     }
 
+    schedule_idle_unload(app);
+
     path
 }
 
@@ -194,6 +215,7 @@ pub fn cancel_recording(app: &AppHandle) {
     }
 
     reset_recording_ui(app);
+    schedule_idle_unload(app);
     info!("Recording cancelled by user");
 }
 
@@ -306,7 +328,10 @@ pub fn write_last_transcription(app: &AppHandle, transcription: &str) -> Result<
     Ok(())
 }
 
-pub fn preload_engine(app: &AppHandle) -> Result<()> {
+/// Single entry point for engine loading — emits `model-state-changed=loaded`
+/// on an actual load so the tray stays in sync regardless of which call site
+/// triggered it.
+pub fn ensure_engine_loaded(app: &AppHandle) -> Result<()> {
     let state = app.state::<AudioState>();
     let mut engine = state.engine.lock();
 
@@ -323,9 +348,66 @@ pub fn preload_engine(app: &AppHandle) -> Result<()> {
 
         *engine = Some(new_engine);
         info!("Model loaded and cached in memory");
+        let _ = app.emit("model-state-changed", "loaded");
     }
 
     Ok(())
+}
+
+pub fn unload_engine(app: &AppHandle) {
+    let state = app.state::<AudioState>();
+    let mut engine = state.engine.lock();
+    if engine.is_some() {
+        *engine = None;
+        info!("Transcription model unloaded (idle timer)");
+        let _ = app.emit("model-state-changed", "unloaded");
+    }
+}
+
+pub fn cancel_pending_idle_unload(app: &AppHandle) {
+    let state = app.state::<AudioState>();
+    let flag = state.idle_unload_cancel.lock().take();
+    if let Some(flag) = flag {
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+pub fn schedule_idle_unload(app: &AppHandle) {
+    let s = crate::settings::load_settings(app);
+    // Wake word listener needs the model resident — reloading mid-segment would clip speech.
+    if s.idle_unload_minutes == 0 || s.wake_word_enabled {
+        return;
+    }
+
+    cancel_pending_idle_unload(app);
+
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let state = app.state::<AudioState>();
+        *state.idle_unload_cancel.lock() = Some(cancel.clone());
+    }
+
+    let delay = std::time::Duration::from_secs(s.idle_unload_minutes as u64 * 60);
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        // Small sleep steps so cancellation takes effect promptly.
+        let step = std::time::Duration::from_millis(500);
+        let mut elapsed = std::time::Duration::ZERO;
+        while elapsed < delay {
+            if cancel.load(std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+            std::thread::sleep(step);
+            elapsed += step;
+        }
+        if !cancel.load(std::sync::atomic::Ordering::SeqCst) {
+            // Defence in depth: Voice Mode may have been enabled during the countdown.
+            let s = crate::settings::load_settings(&app_clone);
+            if !s.wake_word_enabled {
+                unload_engine(&app_clone);
+            }
+        }
+    });
 }
 
 #[cfg(test)]

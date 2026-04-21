@@ -8,6 +8,7 @@ use axum::extract::ws::{Message, WebSocket};
 use log::{debug, error, info, warn};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tauri::Emitter;
 use tokio::sync::mpsc;
 
 /// Handle a WebSocket connection from a smartphone client
@@ -446,9 +447,12 @@ fn process_recording(
         crate::llm::llm::switch_active_mode(&app, *idx);
     }
 
-    // Ensure engine is loaded
-    if let Err(e) = crate::audio::preload_engine(&app) {
-        error!("SmartMic: Failed to preload engine: {}", e);
+    // Don't let the timer fire between load and transcription.
+    crate::audio::cancel_pending_idle_unload(&app);
+
+    if let Err(e) = crate::audio::ensure_engine_loaded(&app) {
+        error!("SmartMic: Failed to load engine: {}", e);
+        let _ = app.emit("model-load-error", e.to_string());
         let err_msg = ServerMessage::Error {
             message: "Transcription failed: model not available".to_string(),
         };
@@ -489,6 +493,9 @@ fn process_recording(
             let _ = tx.try_send(err_msg.to_json());
         }
     }
+
+    // Arm the timer so memory is released if the channel stays silent.
+    crate::audio::schedule_idle_unload(&app);
 }
 
 /// Build the server response for a Translation-mode recording. Asks the LLM
