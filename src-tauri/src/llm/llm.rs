@@ -370,6 +370,23 @@ pub async fn pull_ollama_model(app: AppHandle, url: String, model: String) -> Re
     Ok(())
 }
 
+async fn ollama_model_already_loaded(url: &str, model: &str) -> bool {
+    let Ok(client) = build_http_client(2) else {
+        return false;
+    };
+    let ps_url = format!("{}/ps", normalize_url(url));
+    let Ok(resp) = client.get(&ps_url).send().await else {
+        return false;
+    };
+    if !resp.status().is_success() {
+        return false;
+    }
+    let Ok(parsed) = resp.json::<OllamaTagsResponse>().await else {
+        return false;
+    };
+    parsed.models.iter().any(|m| m.name == model)
+}
+
 pub async fn warmup_ollama_model(app: &AppHandle) -> Result<(), String> {
     let settings = load_llm_connect_settings(app);
 
@@ -385,6 +402,10 @@ pub async fn warmup_ollama_model(app: &AppHandle) -> Result<(), String> {
     }
 
     if active_mode.provider == LLMProvider::Remote {
+        return Ok(());
+    }
+
+    if ollama_model_already_loaded(&settings.url, &active_mode.model).await {
         return Ok(());
     }
 
