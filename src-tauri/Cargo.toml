@@ -70,6 +70,10 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 parking_lot = "0.12"
 
+# Flattens RSS across long STT model load/unload cycles (default
+# allocators fragment on the large ORT buffer churn).
+mimalloc = { version = "0.1", default-features = false }
+
 # rdev is used for keyboard event capture on Linux only
 # macOS uses polling via CGEventSourceKeyState instead (more reliable)
 # Using fufesou fork which provides F13-F20 key support
