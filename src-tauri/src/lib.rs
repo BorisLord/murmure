@@ -369,7 +369,10 @@ pub fn run() {
             set_streaming_text_settings,
             get_recording_mode,
             get_idle_unload_minutes,
-            set_idle_unload_minutes
+            set_idle_unload_minutes,
+            get_idle_unload_follow_ollama,
+            set_idle_unload_follow_ollama,
+            detect_ollama_keep_alive
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

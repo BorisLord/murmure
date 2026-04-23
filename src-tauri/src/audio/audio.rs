@@ -380,12 +380,53 @@ pub fn cancel_pending_idle_unload(app: &AppHandle) {
     }
 }
 
+/// Resolve the effective idle-unload timeout in minutes.
+///
+/// If the user opted into `idle_unload_follow_ollama` AND at least one
+/// LLM Connect mode targets local Ollama AND `OLLAMA_KEEP_ALIVE` parses,
+/// use that value (so the STT model follows the same keep-alive rhythm
+/// the user already set for Ollama). Otherwise fall back to the slider
+/// value.
+///
+/// Returns `None` when the timer should not run at all (value 0 or the
+/// Ollama sentinel `-1` meaning "never").
+pub fn effective_idle_unload_minutes(app: &AppHandle) -> Option<u32> {
+    let s = crate::settings::load_settings(app);
+
+    if s.idle_unload_follow_ollama {
+        let llm = crate::llm::helpers::load_llm_connect_settings(app);
+        let has_local_mode = llm
+            .modes
+            .iter()
+            .any(|m| m.provider == crate::llm::types::LLMProvider::Local);
+        if has_local_mode {
+            if let Some(minutes) = crate::utils::ollama_keep_alive::from_env() {
+                if crate::utils::ollama_keep_alive::is_never(minutes) {
+                    debug!("idle unload: following OLLAMA_KEEP_ALIVE=-1 (never unload)");
+                    return None;
+                }
+                debug!("idle unload: following OLLAMA_KEEP_ALIVE={} min", minutes);
+                return Some(minutes);
+            }
+        }
+    }
+
+    if s.idle_unload_minutes == 0 {
+        None
+    } else {
+        Some(s.idle_unload_minutes)
+    }
+}
+
 pub fn schedule_idle_unload(app: &AppHandle) {
     let s = crate::settings::load_settings(app);
     // Wake word listener needs the model resident — reloading mid-segment would clip speech.
-    if s.idle_unload_minutes == 0 || s.wake_word_enabled {
+    if s.wake_word_enabled {
         return;
     }
+    let Some(minutes) = effective_idle_unload_minutes(app) else {
+        return;
+    };
 
     cancel_pending_idle_unload(app);
 
@@ -395,7 +436,7 @@ pub fn schedule_idle_unload(app: &AppHandle) {
         *state.idle_unload_cancel.lock() = Some(cancel.clone());
     }
 
-    let delay = std::time::Duration::from_secs(s.idle_unload_minutes as u64 * 60);
+    let delay = std::time::Duration::from_secs(minutes as u64 * 60);
     let app_clone = app.clone();
     std::thread::spawn(move || {
         // Small sleep steps so cancellation takes effect promptly.

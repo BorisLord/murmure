@@ -73,6 +73,10 @@ pub struct AppSettings {
     pub streaming_max_lines: u32,
     /// Unload the transcription model after N minutes of idle. 0 = never.
     pub idle_unload_minutes: u32,
+    /// When `OLLAMA_KEEP_ALIVE` is set and LLM Connect runs a local Ollama
+    /// mode, follow that env var instead of `idle_unload_minutes`. Opt-in
+    /// via a UI checkbox that only appears when the env var is present.
+    pub idle_unload_follow_ollama: bool,
 }
 
 impl Default for AppSettings {
@@ -125,6 +129,7 @@ impl Default for AppSettings {
             streaming_font_size: 11,
             streaming_max_lines: 5,
             idle_unload_minutes: 0,
+            idle_unload_follow_ollama: false,
         }
     }
 }

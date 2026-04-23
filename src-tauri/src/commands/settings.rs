@@ -115,3 +115,61 @@ pub fn set_idle_unload_minutes(app: AppHandle, minutes: u32) -> Result<(), Strin
 
     Ok(())
 }
+
+/// Snapshot of `OLLAMA_KEEP_ALIVE` for the UI opt-in checkbox.
+#[derive(serde::Serialize)]
+pub struct OllamaKeepAliveInfo {
+    /// Raw env var value (if present). `None` when unset.
+    pub raw: Option<String>,
+    /// Parsed minutes (if the raw value is parseable). `None` for unparseable.
+    pub minutes: Option<u32>,
+    /// `true` when the parsed value is the "never" sentinel (`-1`).
+    pub never: bool,
+    /// `true` when LLM Connect has at least one Local-provider mode —
+    /// only condition under which Ollama's env var is meaningful for
+    /// Murmure's STT.
+    pub llm_local_active: bool,
+}
+
+#[command]
+pub fn detect_ollama_keep_alive(app: AppHandle) -> OllamaKeepAliveInfo {
+    let raw = std::env::var("OLLAMA_KEEP_ALIVE").ok();
+    let minutes = raw.as_deref().and_then(crate::utils::ollama_keep_alive::parse);
+    let never = minutes
+        .map(crate::utils::ollama_keep_alive::is_never)
+        .unwrap_or(false);
+
+    let llm = crate::llm::helpers::load_llm_connect_settings(&app);
+    let llm_local_active = llm
+        .modes
+        .iter()
+        .any(|m| m.provider == crate::llm::types::LLMProvider::Local);
+
+    OllamaKeepAliveInfo {
+        raw,
+        // Expose `None` for the "never" sentinel so the UI doesn't show
+        // `4294967295 min` — the `never` boolean carries that meaning.
+        minutes: minutes.filter(|_| !never),
+        never,
+        llm_local_active,
+    }
+}
+
+#[command]
+pub fn get_idle_unload_follow_ollama(app: AppHandle) -> Result<bool, String> {
+    let s = crate::settings::load_settings(&app);
+    Ok(s.idle_unload_follow_ollama)
+}
+
+#[command]
+pub fn set_idle_unload_follow_ollama(app: AppHandle, follow: bool) -> Result<(), String> {
+    let mut s = crate::settings::load_settings(&app);
+    s.idle_unload_follow_ollama = follow;
+    crate::settings::save_settings(&app, &s)?;
+
+    // Re-arm the timer so the new policy takes effect immediately.
+    crate::audio::cancel_pending_idle_unload(&app);
+    crate::audio::schedule_idle_unload(&app);
+
+    Ok(())
+}
